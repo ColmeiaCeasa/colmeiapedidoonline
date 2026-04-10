@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Pedidos - Hortifruti</title>
+    <style>
+        :root {
+            --primary-blue: #007bff;
+            --secondary-blue: #0056b3;
+            --success-green: #28a745;
+            --danger-red: #ff4d4d;
+            --bg-light: #f4f7f6;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg-light); margin: 0; padding: 20px; padding-bottom: 100px; }
+        .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; color: #333; }
+        input, select { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box; }
+
+        .search-box { margin: 20px 0; border: 2px solid var(--primary-blue); border-radius: 5px; }
+        
+        .product-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee; }
+        .product-info { flex-grow: 1; }
+        .product-name { font-weight: bold; text-transform: uppercase; font-size: 0.9em; }
+        .product-price { color: #666; font-size: 0.85em; }
+        .qty-input { width: 60px; text-align: center; margin-left: 10px; }
+
+        .btn-clear { background: var(--danger-red); color: white; border: none; width: 100%; padding: 12px; border-radius: 5px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        
+        .footer-bar { position: fixed; bottom: 0; left: 0; width: 100%; background: #003366; color: white; padding: 15px; display: flex; flex-direction: column; align-items: center; box-shadow: 0 -2px 10px rgba(0,0,0,0.2); }
+        .btn-send { background: var(--primary-blue); color: white; border: none; padding: 12px 30px; border-radius: 25px; font-weight: bold; cursor: pointer; width: 90%; max-width: 400px; margin-top: 5px; }
+
+        /* Modal / Popup */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; }
+        .modal-content { background: white; width: 90%; max-width: 500px; margin: 50px auto; padding: 20px; border-radius: 8px; max-height: 80vh; overflow-y: auto; }
+        
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="form-group">
+        <label>Nome do Mercado/Cliente:</label>
+        <input type="text" id="cliente" placeholder="Seu nome...">
+    </div>
+    <div class="form-group">
+        <label>Vendedor:</label>
+        <input type="text" id="vendedor" value="Vendedor Leandro">
+    </div>
+    <div class="form-group">
+        <label>Como deseja receber?</label>
+        <select id="entrega">
+            <option>Receber na loja (Entrega)</option>
+            <option>Retirada no local</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>Endereço de Entrega:</label>
+        <input type="text" id="endereco" placeholder="Endereço completo...">
+    </div>
+
+    <input type="text" id="busca" class="search-box" placeholder="🔍 Buscar produto..." onkeyup="filtrarProdutos()">
+    
+    <button class="btn-clear" onclick="zerarQuantidades()">🚀 ZERAR QUANTIDADES</button>
+
+    <div id="lista-produtos">
+        <p style="text-align:center;">Carregando produtos...</p>
+    </div>
+</div>
+
+<div class="footer-bar">
+    <div id="resumo-footer">Itens: 0 | Total: R$ 0,00</div>
+    <button class="btn-send" onclick="abrirRevisao()">🚀 REVISAR E ENVIAR</button>
+</div>
+
+<div id="modalRevisao" class="modal">
+    <div class="modal-content">
+        <h3>Revisão do Pedido</h3>
+        <div id="conteudoRevisao"></div>
+        <hr>
+        <button class="btn-send" style="background: var(--success-green);" onclick="enviarWhatsApp()">CONFIRMAR E ENVIAR WHATSAPP</button>
+        <button class="btn-clear" onclick="fecharModal()">VOLTAR</button>
+    </div>
+</div>
+
+<script>
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwmzjYDJHOqdfzo1sxpsd3rppfptEHcsH997Tc2Ck-P6CQ2-KxOW3VFDDzfFOsI5KsL/exec"; // Coloque aqui a URL do seu script
+    let produtosDados = [];
+
+    async function carregarProdutos() {
+        try {
+            const response = await fetch(SCRIPT_URL);
+            const json = await response.json();
+            produtosDados = json.dados;
+            renderizarProdutos(produtosDados);
+        } catch (error) {
+            document.getElementById('lista-produtos').innerHTML = "Erro ao carregar produtos. Verifique a URL do Script.";
+        }
+    }
+
+    function renderizarProdutos(lista) {
+        const container = document.getElementById('lista-produtos');
+        container.innerHTML = '';
+
+        lista.forEach((prod, index) => {
+            // prod[0]=Cod, prod[1]=Nome, prod[2]=Peso, prod[3]=Tipo, prod[4]=Preço Emb, prod[5]=Preço Kilo, prod[7]=Situação
+            if (prod[7] === "SIM") {
+                const item = document.createElement('div');
+                item.className = 'product-item';
+                item.innerHTML = `
+                    <div class="product-info">
+                        <div class="product-name">${prod[1]}</div>
+                        <div class="product-price">${prod[3]} (${prod[2]}kg) - R$ ${prod[4]}</div>
+                    </div>
+                    <input type="number" class="qty-input" data-index="${index}" data-nome="${prod[1]}" data-preco="${prod[4].replace(',','.')}" min="0" onchange="atualizarTotal()" placeholder="0">
+                `;
+                container.appendChild(item);
+            }
+        });
+    }
+
+    function filtrarProdutos() {
+        const termo = document.getElementById('busca').value.toLowerCase();
+        const itens = document.querySelectorAll('.product-item');
+        itens.forEach(item => {
+            const nome = item.querySelector('.product-name').innerText.toLowerCase();
+            item.style.display = nome.includes(termo) ? 'flex' : 'none';
+        });
+    }
+
+    function atualizarTotal() {
+        let total = 0;
+        let itensCount = 0;
+        document.querySelectorAll('.qty-input').forEach(input => {
+            const qtd = parseFloat(input.value) || 0;
+            if (qtd > 0) {
+                total += qtd * parseFloat(input.dataset.preco);
+                itensCount++;
+            }
+        });
+        document.getElementById('resumo-footer').innerText = `Itens: ${itensCount} | Total: R$ ${total.toFixed(2).replace('.',',')}`;
+    }
+
+    function zerarQuantidades() {
+        document.querySelectorAll('.qty-input').forEach(i => i.value = '');
+        atualizarTotal();
+    }
+
+    function abrirRevisao() {
+        const cliente = document.getElementById('cliente').value;
+        if (!cliente) return alert("Por favor, preencha o nome do cliente.");
+
+        let html = `<strong>Cliente:</strong> ${cliente}<br><strong>Vendedor:</strong> ${document.getElementById('vendedor').value}<br><br>`;
+        let totalGeral = 0;
+
+        document.querySelectorAll('.qty-input').forEach(input => {
+            const qtd = parseFloat(input.value) || 0;
+            if (qtd > 0) {
+                const subtotal = qtd * parseFloat(input.dataset.preco);
+                totalGeral += subtotal;
+                html += `• ${qtd}x ${input.dataset.nome} = R$ ${subtotal.toFixed(2)}<br>`;
+            }
+        });
+
+        html += `<br><strong>Total: R$ ${totalGeral.toFixed(2)}</strong>`;
+        document.getElementById('conteudoRevisao').innerHTML = html;
+        document.getElementById('modalRevisao').style.display = 'block';
+    }
+
+    function fecharModal() {
+        document.getElementById('modalRevisao').style.display = 'none';
+    }
+
+    function enviarWhatsApp() {
+        const cliente = document.getElementById('cliente').value;
+        const vendedor = document.getElementById('vendedor').value;
+        const endereco = document.getElementById('endereco').value;
+        const entrega = document.getElementById('entrega').value;
+
+        let texto = `*NOVO PEDIDO*\n\n`;
+        texto += `*Cliente:* ${cliente}\n`;
+        texto += `*Vendedor:* ${vendedor}\n`;
+        texto += `*Entrega:* ${entrega}\n`;
+        texto += `*Endereço:* ${endereco}\n\n`;
+        texto += `*ITENS:*\n`;
+
+        let totalGeral = 0;
+        document.querySelectorAll('.qty-input').forEach(input => {
+            const qtd = parseFloat(input.value) || 0;
+            if (qtd > 0) {
+                const subtotal = qtd * parseFloat(input.dataset.preco);
+                totalGeral += subtotal;
+                texto += `- ${qtd}x ${input.dataset.nome}: R$ ${subtotal.toFixed(2)}\n`;
+            }
+        });
+
+        texto += `\n*TOTAL: R$ ${totalGeral.toFixed(2)}*`;
+        
+        const numeroFone = "5511999999999"; // COLOQUE O SEU NUMERO AQUI
+        const url = `https://api.whatsapp.com/send?phone=${numeroFone}&text=${encodeURIComponent(texto)}`;
+        window.open(url, '_blank');
+    }
+
+    // Iniciar
+    carregarProdutos();
+</script>
+
+</body>
+</html>
